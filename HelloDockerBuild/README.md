@@ -3,7 +3,7 @@
 # Introduction
 We want to build our code using on a specific Linux version and a specific compiler version, and then debug the code using VS Code.
 
-# Build the container (see Dockerfile)
+# Build the container (see docker/Dockerfile)
 From the folder root: docker build -t hello-world-container docker/
 
 Start the container: docker run --name hello-world-builder -it -v $(pwd):/HelloWorld hello-world-container
