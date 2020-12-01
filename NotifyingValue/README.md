@@ -1,3 +1,3 @@
 # This code is a proof of concept for data structures that can notify their data changes to arbitrary listeners.
 
-This is useful, for example, for observing global C-style structures in legacy code when we need to monitor when values are changed by some code.
+This is useful, for example, for observing C-style structures in legacy code when we need to know when some values change. This could be because the code doesn’t implement proper getters/setters and all data is public – i.e. can be changed by anyone in the code. We want to notify some observer when any values change without needing to modify the legacy code logic with specific calls to notifications. We just need to replace the structure type declarations with proper macros. By using C++ templates and operator overloading we are able to “hijack” writes to the structure elements and notify the observers. 
