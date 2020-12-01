@@ -336,9 +336,10 @@ struct BasicValues
 
 struct S1L1 : public NotifyingStruct
 {
-    // boilerplate stuff
-    //S1L1() : NotifyingStruct("S1L1") {}
-    //S1L1(const NotifyingStruct* parent) : NotifyingStruct(parent, "S1L1") {}
+    // Boilerplate stuff, two constructors (one for top-level strcut, and one when a substruct). 
+    // The macro expends to something like:
+    //  S1L1() : NotifyingStruct("S1L1") {}
+    //  S1L1(const NotifyingStruct* parent) : NotifyingStruct(parent, "S1L1") {}
     NOTIFICATION_STRUCT(S1L1)
 
     //NotifyingValue<uint32_t> i1 = { this, "i1", 42 };
@@ -416,7 +417,7 @@ int main()
     s1l2.s1l1.i1 = 11;
     s1l2.s1l1.a1[1] = 66;
 
-    // update array of structures
+    // update array of structures (TODO)
     //auto& a = s1l2.sa1[0];
     auto& t = s1l2.sa1[0]; // .i1 = 99;
     //t.i1 = 99;
