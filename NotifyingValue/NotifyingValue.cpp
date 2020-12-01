@@ -13,19 +13,33 @@ class NotifyingValueBase
 {
 protected:
     string mKey;
+    const NotifyingValueBase* mpParent;
+
+    NotifyingValueBase(const NotifyingValueBase* parent, const string& key)
+        : mpParent(parent), mKey(key)
+    {}
 
     NotifyingValueBase(const string& key)
-        : mKey(key)
+        : NotifyingValueBase(nullptr, key)
+    {}
+
+    NotifyingValueBase()
+        : NotifyingValueBase(nullptr, "")
     {}
 
 public:
     virtual void SendUpdate() const = 0;
 
-    virtual void UpdateValue(string value) = 0;
+    virtual void UpdateValue(const string& value) = 0;
 
     const string& key() const
     {
         return mKey;
+    }
+
+    const NotifyingValueBase* parent() const
+    {
+        return mpParent;
     }
 };
 
@@ -33,9 +47,9 @@ public:
 class NotificationDelegate
 {
 public:
-    virtual void SendUpdate(const string& member, const string& value)
-    {
-        cout << member << " updated, new value: " << value << endl;
+    virtual void SendUpdate(const string& key, const string& value)
+    {  
+        cout << key << " updated, new value: " << value << endl;
     }
 };
 
@@ -63,9 +77,9 @@ public:
 
     void Add(NotifyingValueBase& notifyingValue);
 
-    void SendUpdate() const;
+    void NotifyAll() const;
 
-    void SendUpdate(const string& key, const string& value) const;
+    void SendUpdate(const NotifyingValueBase* item, const string& value) const;
 
     bool Update(const string& key, const string& value);
 };
@@ -78,21 +92,42 @@ private:
     T mValue;
 
 public:
-    NotifyingValue(const string& name, const T& value) 
-        : NotifyingValueBase(name), mValue(value)
+    // Constructors for variables inside of a structure
+    NotifyingValue(const NotifyingValueBase* const parent, const string& name, const T& value)
+        : NotifyingValueBase(parent, name), mValue(value)
     {
         ValueNotificationManager::GetInstance().Add(*this);
     }
 
-    NotifyingValue(string name)
-        : NotifyingValue(name, { 0 }) {}
-        
+    NotifyingValue(const NotifyingValueBase* const parent, const string& name)
+        : NotifyingValue(parent, name, { 0 })
+    {}
 
-    T operator=(const T& other)
+    // Constructors for variables outside of a structure
+    NotifyingValue(string name, const T& value)
+        : NotifyingValue(nullptr, name, value) 
+    {}
+
+    NotifyingValue(string name)
+        : NotifyingValue(nullptr, name, { 0 }) 
+    {}
+
+    NotifyingValue()
+        : mValue { 0 }
+    {}
+
+    void Init(const NotifyingValueBase* const parent, const string& name)
+    {
+        mpParent = parent;
+        mKey = name;
+        ValueNotificationManager::GetInstance().Add(*this);
+    }
+        
+    NotifyingValue<T>& operator=(const T& other)
     {
         mValue = other;
         SendUpdate();
-        return mValue;
+        return *this;
     }
 
     operator T() const
@@ -104,57 +139,16 @@ public:
     {
         stringstream ss;
         ss << mValue;
-        ValueNotificationManager::GetInstance().SendUpdate(mKey, ss.str());
+        ValueNotificationManager::GetInstance().SendUpdate(this, ss.str());
     }
 
-    void UpdateValue(string value) override
+    virtual void UpdateValue(const string& value) override
     {
-        stringstream ss(value);
-        ss >> mValue;
+        // TODO: implement deserialization from string
+        //stringstream ss(value);
+        //ss >> mValue;
     }
 
-};
-
-// Notification class for elements of arrays
-template<typename T>
-class NotifyingArrayMember : public NotifyingValueBase
-{
-private:
-    T mValue;
-    NotifyingValueBase const* mParentArray;
-
-public:
-    NotifyingArrayMember()
-        : NotifyingValueBase{ "el" }, mValue{ 0 }, mParentArray(nullptr)
-    {}
-
-    void SetParent(NotifyingValueBase& parentArray)
-    {
-        mParentArray = &parentArray;
-    }
-
-    T operator=(const T& other)
-    {
-        mValue = other;
-        mParentArray->SendUpdate();
-        return mValue;
-    }
-
-    operator T() const
-    {
-        return mValue;
-    }
-
-    void SendUpdate() const override
-    {
-        // nothing here, we send updates for the whole array, not each element individually 
-    }
-
-    void UpdateValue(string value) override
-    {
-        stringstream ss(value);
-        ss >> mValue;
-    }
 };
 
 // Notification class for arrays
@@ -162,37 +156,36 @@ template<typename T, size_t Size>
 class NotifyingArray : public NotifyingValueBase
 {
 private:
-    array<NotifyingArrayMember<T>, Size> mArray;
+    array<NotifyingValue<T>, Size> mArray;
 
 public:
-    NotifyingArray(const string& name)
-        : NotifyingValueBase(name), mArray { }
+    NotifyingArray(const NotifyingValueBase* const parent, const string& name)
+        : NotifyingValueBase(parent, name), mArray{ }
     {
-        for (auto& v : mArray)
+        for (size_t i = 0; i < mArray.size(); i++)
         {
-            v.SetParent(*this);
+            stringstream ss;
+            ss << i;
+            mArray[i].Init(this, ss.str());
         }
         ValueNotificationManager::GetInstance().Add(*this);
     }
 
-    NotifyingArrayMember<T>& operator [](size_t i)
+    NotifyingArray(const string& name)
+        : NotifyingArray(nullptr, name)
+    {}
+
+    NotifyingValue<T>& operator [](size_t i)
     {
         return mArray[i];
     }
 
     void SendUpdate() const override
     {
-        stringstream ss;
-        ss << "[";
-        for (auto& v : mArray)
-        {
-            ss << (T)v << " ";
-        }
-        ss << "]";
-        ValueNotificationManager::GetInstance().SendUpdate(mKey, ss.str());
+        // Each member sends its own update
     }
 
-    void UpdateValue(string value) override
+    void UpdateValue(const string& value) override
     {
         stringstream ss(value);
         string item;
@@ -204,6 +197,32 @@ public:
                 mArray[idx].UpdateValue(item);
             }
         }
+    }
+};
+
+class NotifyingStruct : public NotifyingValueBase
+{
+public:
+    NotifyingStruct(const string& key)
+        : NotifyingValueBase(key) { }
+
+    NotifyingStruct(const NotifyingStruct* parent, const string& key)
+        : NotifyingValueBase(parent, key) { }
+
+    void SendUpdate() const override
+    {
+        // Each member sends its own update
+    }
+
+    void UpdateValue(const string& value) override
+    {
+        // TODO: ability to load a structure from a string (e.g. JSON)
+    }
+
+    friend ostream& operator<<(ostream& out, const NotifyingStruct& ns)
+    {
+        out << "<Struct " << ns.mKey << " updated>";
+        return out;
     }
 };
 
@@ -224,7 +243,7 @@ void ValueNotificationManager::Add(NotifyingValueBase& notifyingValue)
     mp_Values.push_back(&notifyingValue);
 }
 
-void ValueNotificationManager::SendUpdate() const
+void ValueNotificationManager::NotifyAll() const
 {
     for (const auto* v : mp_Values)
     {
@@ -232,9 +251,26 @@ void ValueNotificationManager::SendUpdate() const
     }
 }
 
-void ValueNotificationManager::SendUpdate(const string& key, const string& value) const
+void ValueNotificationManager::SendUpdate(const NotifyingValueBase* item, const string& value) const
 {
-    mCurrentNotificatinoDelegate.SendUpdate(key, value);
+    vector<string> keys = { item->key() };
+
+    auto parent = item->parent();
+    while (parent != nullptr)
+    {
+        keys.push_back(parent->key());
+        parent = parent->parent();
+    }
+
+    // assemble the key string
+    stringstream ss;
+    for (size_t idx = keys.size() - 1; idx > 0; idx--)
+    {
+        ss << keys[idx] << ".";
+    }
+    ss << keys[0];
+    
+    mCurrentNotificatinoDelegate.SendUpdate(ss.str(), value);
 }
 
 bool ValueNotificationManager::Update(const string& key, const string& value)
@@ -257,7 +293,7 @@ bool ValueNotificationManager::Update(const string& key, const string& value)
 #define NOTIFICATION_VAR_DEFAULT_VAL(TYPE, NAME, DEFAULT_VALUE) NotifyingValue<TYPE> NAME = { #NAME, DEFAULT_VALUE }
 #define NOTIFICATION_ARRAY(TYPE, SIZE, NAME) NotifyingArray<TYPE, SIZE> NAME = { #NAME }
 
-// example substructure that is used in the main example strucutre 
+// example substructure that is used in the main example structure 
 struct S1
 {
     int i1;
@@ -268,7 +304,7 @@ struct S1
 enum Colors : int { Red, Blue, White, Yellow, Black };
 
 // create global structure of values that we monitor changes of
-struct Values
+struct BasicValues
 {
     // Scalars
     NOTIFICATION_VARIABLE(uint16_t, i1);
@@ -289,11 +325,51 @@ struct Values
     S1 s1;
 } my_values;
 
+// Working with structs
+#define NOTIFICATION_STRUCT_VARIABLE(TYPE, NAME) NotifyingValue<TYPE> NAME = { this, #NAME }
+#define NOTIFICATION_STRUCT_VAR_DEFAULT_VAL(TYPE, NAME, DEFAULT_VALUE) NotifyingValue<TYPE> NAME = { this, #NAME, DEFAULT_VALUE }
+#define NOTIFICATION_STRUCT(NAME) NAME() : NotifyingStruct(#NAME) {} \
+    NAME(const NotifyingStruct* parent) : NotifyingStruct(parent, #NAME) {}
+    // TOOD: delete default constructor and assignment operator
+#define NOTIFICATION_SUBSTRUCT(TYPE, NAME) TYPE NAME = { this };
+#define NOTIFICATION_STRUCT_ARRAY(TYPE, SIZE, NAME) NotifyingArray<TYPE, SIZE> NAME = { this, #NAME }
+
+struct S1L1 : public NotifyingStruct
+{
+    // Boilerplate stuff, two constructors (one for top-level strcut, and one when a substruct). 
+    // The macro expends to something like:
+    //  S1L1() : NotifyingStruct("S1L1") {}
+    //  S1L1(const NotifyingStruct* parent) : NotifyingStruct(parent, "S1L1") {}
+    NOTIFICATION_STRUCT(S1L1)
+
+    //NotifyingValue<uint32_t> i1 = { this, "i1", 42 };
+    NOTIFICATION_STRUCT_VAR_DEFAULT_VAL(uint32_t, i1, 42);
+
+    NOTIFICATION_STRUCT_VARIABLE(double, d1);
+
+    NOTIFICATION_STRUCT_ARRAY(int, 6, a1);
+
+};
+
+struct S1L2 : public NotifyingStruct
+{
+public:
+    NOTIFICATION_STRUCT(S1L2)
+
+    NOTIFICATION_STRUCT_VAR_DEFAULT_VAL(uint32_t, i1, 42);
+
+    //S1L1 s1l1 = { this };
+    NOTIFICATION_SUBSTRUCT(S1L1, s1l1);
+
+    //NotifyingArray<S1L1, 2> sa1 = { this, "sa1" };
+    NOTIFICATION_STRUCT_ARRAY(S1L1, 2, sa1);
+
+};
 
 int main()
 {
     // Ask all values to send their value notifications: these will be default values
-    ValueNotificationManager::GetInstance().SendUpdate();
+    ValueNotificationManager::GetInstance().NotifyAll();
 
     // We will access the struct members as if it were a basic C-style structure 
     cout << "Update some values\n";
@@ -323,8 +399,28 @@ int main()
         cout << "Comparison works\n";
 
     cout << "Again send all updates\n";
-    ValueNotificationManager::GetInstance().SendUpdate();
+    ValueNotificationManager::GetInstance().NotifyAll();
 
-    // update values trough strings methods
+    cout << "Update i1 \n";
     ValueNotificationManager::GetInstance().Update("i1", "45");
+
+    ValueNotificationManager::GetInstance().NotifyAll();
+
+    // Structure with name
+    S1L1 s1l1;
+    s1l1.i1 = 65;
+    s1l1.a1[3] = 55;
+
+    // Complex structure (members are other structures)
+    S1L2 s1l2;
+    s1l2.i1 = 72;
+    s1l2.s1l1.i1 = 11;
+    s1l2.s1l1.a1[1] = 66;
+
+    // update array of structures (TODO)
+    //auto& a = s1l2.sa1[0];
+    auto& t = s1l2.sa1[0]; // .i1 = 99;
+    //t.i1 = 99;
+
+    ValueNotificationManager::GetInstance().NotifyAll();
 }
