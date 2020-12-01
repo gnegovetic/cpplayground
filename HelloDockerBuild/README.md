@@ -1,4 +1,4 @@
-# Build and debug C++ code using Docker
+# Build and debug C++ code using Docker containers
 
 ## Introduction
 We want to build our code using on a specific Linux version and a specific compiler version, and then debug the code using VS Code.
